@@ -101,7 +101,12 @@ module ::Patreon
       return if user.blank?
 
       user.custom_fields["patreon_id"] = patreon_id
-      user.save_custom_fields unless skip_save || user.custom_fields_clean?
+
+      # Always saves, not sure how, but had a new user with it's `patreon_id` missing from custom fields
+      # Manually added it and everything was fine afterward: `INSERT INTO user_custom_fields (user_id, name, value, created_at, updated_at) VALUES (XXXX, 'patreon_id', XXXXXXXXX, NOW(), NOW())`
+      # Curiously he had a patreon title and some residual left, so it seems like the process worked BUT the custom field was missing so on the next "sync" the user was removed from the group
+      # It doesn't seems like the "field" can be deleted... So it must be that it was never saved...
+      user.save_custom_fields #unless skip_save || user.custom_fields_clean?
 
       user
     end

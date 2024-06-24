@@ -50,10 +50,10 @@ module ::Patreon
         end
 
         User.where(id: (group_user_ids - user_ids)).each do |user|
-          group.remove user
+            group.remove user
+          end
         end
       end
-    end
 
     def self.sync_groups_by(patreon_id:)
       filters = Patreon.get('filters') || {}
@@ -88,7 +88,7 @@ module ::Patreon
         if is_member && !is_existing_member
           group.add user
         elsif !is_member && is_existing_member
-          group.remove user
+            group.remove user
         end
       end
     end

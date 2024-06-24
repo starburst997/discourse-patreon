@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require 'json'
+require 'faraday'
+require 'faraday/retry'
 
 module ::Patreon
 
@@ -11,8 +13,12 @@ module ::Patreon
     ACCESS_TOKEN_INVALID = "dashboard.patreon.access_token_invalid".freeze
     INVALID_RESPONSE = "patreon.error.invalid_response".freeze
 
+    def self.build_members_uri(campaign_id)
+        "/oauth2/v2/campaigns/#{campaign_id}/members?include=currently_entitled_tiers,user&fields[member]=currently_entitled_amount_cents,email,last_charge_date,last_charge_status"
+    end
+
     def self.campaign_data
-      get('/oauth2/api/current_user/campaigns?include=rewards,creator,goals,pledges&page[count]=100')
+      get('/oauth2/v2/campaigns?include=tiers&fields[tier]=amount_cents,title&page[count]=100')
     end
 
     def self.get(uri)
@@ -28,10 +34,28 @@ module ::Patreon
         limiter_day.performed!
       end
 
-      response = Faraday.new(
+      retry_options = {
+        max: 4,
+        interval: 2,
+        interval_randomness: 1,
+        backoff_factor: 2,
+        retry_statuses: [502, 504, 500, 503],
+        exceptions: [
+          Errno::ETIMEDOUT, 'Timeout::Error',
+          Faraday::TimeoutError, Faraday::RetriableResponse,
+          Faraday::ServerError
+        ]
+      }
+
+      conn = Faraday.new(
         url: 'https://api.patreon.com',
         headers: { 'Authorization' => "Bearer #{SiteSetting.patreon_creator_access_token}" }
-      ).get(uri)
+      ) do |c|
+        c.use Faraday::Response::RaiseError
+        c.request :retry, retry_options
+      end
+
+      response = conn.get(uri)
 
       limiter_hr.performed!
       limiter_day.performed!

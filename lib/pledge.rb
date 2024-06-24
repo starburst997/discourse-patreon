@@ -14,6 +14,7 @@ module ::Patreon
 
     def self.delete!(pledge_data)
       entry = pledge_data["data"]
+      attrs = entry['attributes']
       rel = entry['relationships']
       reward_users = Patreon::RewardUser.all
 
@@ -36,7 +37,8 @@ module ::Patreon
       Patreon.set("reward-users", reward_users)
     end
 
-    def self.pull!(uris)
+    def self.pull!(campaign_ids)
+      uris = campaign_ids.map { |id| Patreon::Api.build_members_uri(id) }
       pledges_data = []
 
       uris.each do |uri|
@@ -49,6 +51,7 @@ module ::Patreon
         end
 
         pledges_data << pledge_data if pledge_data.present?
+        raise ArgumentError.new("broken response") unless pledge_data.present? and not pledge_data.key?(:error)
       end
 
       save!(pledges_data)
@@ -81,39 +84,28 @@ module ::Patreon
     end
 
     def self.extract(pledge_data)
-      pledges, declines, reward_users, users = {}, {}, {}, {}
+      pledges, declines, users = {}, {}, {}, {}
+      reward_users = Hash.new { |h, k| h[k] = [] }
 
       if pledge_data && pledge_data["data"].present?
         pledge_data['data'] = [pledge_data['data']] unless pledge_data['data'].kind_of?(Array)
 
         # get pledges info
         pledge_data['data'].each do |entry|
-          if entry['type'] == 'pledge'
-            patron_id = entry['relationships']['patron']['data']['id']
-            attrs = entry['attributes']
+          next if entry['relationships']['currently_entitled_tiers']['data'].empty?
 
-            (reward_users[entry['relationships']['reward']['data']['id']] ||= []) << patron_id unless entry['relationships']['reward']['data'].nil?
-            pledges[patron_id] = attrs['amount_cents']
-            declines[patron_id] = attrs['declined_since'] if attrs['declined_since'].present?
-          elsif entry['type'] == 'member'
+          if entry['type'] == 'member'
             patron_id = entry['relationships']['user']['data']['id']
             attrs = entry['attributes']
 
-            currently_entitled_tiers = entry['relationships']['currently_entitled_tiers'] || {}
-            (currently_entitled_tiers['data'] || []).each do |tier|
-              (reward_users[tier['id']] ||= []) << patron_id
+            entry['relationships']['currently_entitled_tiers']['data'].each do |tier|
+              reward_users[tier['id']] << patron_id
             end
-            pledges[patron_id] = attrs['pledge_amount_cents']
+            pledges[patron_id] = attrs['currently_entitled_amount_cents']
             declines[patron_id] = attrs['last_charge_date'] if attrs['last_charge_status'] == "Declined"
-          end
-        end
 
-        # get user list too
-        pledge_data['included'].each do |entry|
-          case entry['type']
-          when 'user'
-            if entry['attributes']['email'].present?
-              users[entry['id']] = entry['attributes']['email'].downcase
+            if attrs['email'].present?
+              users[patron_id] = attrs['email'].downcase
             end
           end
         end

@@ -7,25 +7,24 @@ module ::Patreon
 
     def self.update!
       rewards = {}
-      campaign_rewards = []
-      pledges_uris = []
+      campaign_ids = []
+      campaign_tiers = []
 
       response = ::Patreon::Api.campaign_data
 
       return false if response.blank? || response['data'].blank?
 
       response['data'].map do |campaign|
-        uri = campaign['relationships']['pledges']['links']['first']
-        pledges_uris << uri.sub('page%5Bcount%5D=20', 'page%5Bcount%5D=100')
+        campaign_ids << campaign['id']
 
-        campaign['relationships']['rewards']['data'].each do |entry|
-          campaign_rewards << entry['id']
+        campaign['relationships']['tiers']['data'].each do |entry|
+          campaign_tiers << entry['id']
         end
       end
 
       response['included'].each do |entry|
         id = entry['id']
-        if entry['type'] == 'reward' && campaign_rewards.include?(id)
+        if entry['type'] == 'tier' && campaign_tiers.include?(id)
           rewards[id] = entry['attributes']
           rewards[id]['id'] = id
         end
@@ -38,7 +37,7 @@ module ::Patreon
 
       Patreon.set('rewards', rewards)
 
-      Patreon::Pledge.pull!(pledges_uris)
+      Patreon::Pledge.pull!(campaign_ids)
 
       # Sets all patrons to the seed group by default on first run
       filters = Patreon.get('filters')

@@ -31,8 +31,6 @@ class ::Patreon::PatreonWebhookController < ApplicationController
       Patreon::Pledge.create!(pledge_data)
     when 'pledges:update', 'members:pledge:update'
       Patreon::Pledge.update!(pledge_data)
-    when 'pledges:delete', 'members:pledge:delete'
-      Patreon::Pledge.delete!(pledge_data)
     end
 
     Jobs.enqueue(:sync_patron_groups, patreon_id: patreon_id)
